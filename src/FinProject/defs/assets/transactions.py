@@ -5,6 +5,7 @@ from pathlib import Path
 
 import clickhouse_connect
 from dagster import MaterializeResult, asset
+from FinProject.defs.partitions import daily_partitions
 
 
 _COLUMNS = [
@@ -58,8 +59,8 @@ def _read_transactions() -> list[tuple[object, ...]]:
 
 
 @asset
-def transactions() -> MaterializeResult:
-    """Load the transactions CSV into the ClickHouse transactions table."""
+def transactions_staging() -> MaterializeResult:
+    """Load the transactions CSV into the ClickHouse transactions staging table."""
     rows = _read_transactions()
     client = clickhouse_connect.get_client(
             host=os.getenv("DB_HOST"),
@@ -71,7 +72,7 @@ def transactions() -> MaterializeResult:
     try:
         client.command(
             """
-            CREATE TABLE IF NOT EXISTS transactions (
+            CREATE TABLE IF NOT EXISTS stg_transactions (
                 transaction_id String,
                 customer_id String,
                 branch_id String,
@@ -87,14 +88,84 @@ def transactions() -> MaterializeResult:
                 fraud_flag String,
                 promo_code Nullable(String)
             ) ENGINE = MergeTree
-            ORDER BY (transaction_date, transaction_id)
+            ORDER BY (updated_at, transaction_id)
             """
         )
-        client.command("TRUNCATE TABLE transactions")
-        client.insert("transactions", rows, column_names=_COLUMNS)
+        client.command("TRUNCATE TABLE stg_transactions")
+        client.insert("stg_transactions", rows, column_names=_COLUMNS)
     finally:
         client.close()
 
     return MaterializeResult(
         metadata={"table": "transactions", "row_count": len(rows)}
     )
+
+@asset(
+    deps = ["transactions_staging"], partitions_def = daily_partitions
+)
+def transactions_dwh(context) -> None:
+    """Load the transactions CSV into the ClickHouse transactions staging table."""
+    partition_date = context.partition_key
+    client = clickhouse_connect.get_client(
+            host=os.getenv("DB_HOST"),
+            port=int(os.getenv("DB_PORT")),
+            username=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME_DWH"),
+        )
+    try:
+        client.command(
+            """
+            CREATE TABLE IF NOT EXISTS TRANSACTIONS (
+                transaction_id String,
+                customer_id String,
+                branch_id String,
+                transaction_date DateTime,
+                amount Nullable(Int64),
+                payment_method String,
+                transaction_status String,
+                channel String,
+                updated_at DateTime,
+                merchant_category String,
+                device_type String,
+                currency String,
+                fraud_flag String,
+                promo_code Nullable(String)
+            ) ENGINE = MergeTree
+            ORDER BY (updated_at, transaction_id)
+            """
+        )
+        client.command(f"DELETE FROM TRANSACTIONS WHERE toDate(updated_at) = '{partition_date}'")
+        client.command(
+            f"""INSERT INTO TRANSACTIONS
+            SELECT 
+                transaction_id,
+                customer_id,
+                branch_id,
+                transaction_date,
+                amount,
+                payment_method,
+                transaction_status,
+                channel,
+                updated_at,
+                merchant_category,
+                device_type,
+                currency,
+                fraud_flag,
+                promo_code
+            FROM(
+                SELECT 
+                    tr.*
+                    , row_number() OVER (PARTITION BY transaction_id ORDER BY updated_at DESC) AS rn 
+                FROM FIN_STG.stg_transactions tr
+            WHERE toDate(updated_at) = '{partition_date}'
+            )
+            WHERE rn = 1
+            """
+        )
+    finally:
+        client.close()
+
+    '''return MaterializeResult(
+        metadata={"table": "transactions", "row_count": len(rows)}
+    )'''
