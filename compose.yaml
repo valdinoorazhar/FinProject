@@ -1,0 +1,37 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${DB_USER:-finproject}
+      CLICKHOUSE_PASSWORD: ${DB_PASSWORD:-finproject-local-only}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "127.0.0.1:${DB_PORT:-8123}:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - clickhouse-client --user "$${CLICKHOUSE_USER}" --password "$${CLICKHOUSE_PASSWORD}" --query "SELECT 1"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:25.8
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        clickhouse-client --host clickhouse --user "$${CLICKHOUSE_USER}" --password "$${CLICKHOUSE_PASSWORD}" --query "CREATE DATABASE IF NOT EXISTS FIN_STG" &&
+        clickhouse-client --host clickhouse --user "$${CLICKHOUSE_USER}" --password "$${CLICKHOUSE_PASSWORD}" --query "CREATE DATABASE IF NOT EXISTS FIN_DWH"
+    environment:
+      CLICKHOUSE_USER: ${DB_USER:-finproject}
+      CLICKHOUSE_PASSWORD: ${DB_PASSWORD:-finproject-local-only}
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+volumes:
+  clickhouse-data:
