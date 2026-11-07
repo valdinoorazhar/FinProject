@@ -51,6 +51,9 @@ dg dev
 ```
 
 Open http://localhost:3000 in your browser to see the project.
+Enable `daily_asset_schedule` in the Dagster UI to materialize all assets daily
+at 6:00 AM Asia/Jakarta time. Partitioned assets process the latest completed
+daily partition.
 
 The `transactions` asset loads `data/lake/transactions.csv` into a ClickHouse
 table named `transactions`. It replaces the table contents on each materialization.
