@@ -1,5 +1,16 @@
 # FinProject
 
+## How to uunderstand this codebase
+
+This is an ELT Pipeline utilizing Dagster.
+Each information is describe by Dagster "Assets" in src\FinProject\defs\assets.
+
+These assets are materialized from source csv file into Clickhouse table.
+
+There are 4 Python scripts there, 3 define the definition and logic of data asset and 1 for data quality check.
+
+These "assets" are scheduled in src\FinProject\defs\Scheduled.py in daily manner.
+
 ## Getting started
 
 ### Installing dependencies
@@ -55,11 +66,7 @@ Enable `daily_asset_schedule` in the Dagster UI to materialize all assets daily
 at 6:00 AM Asia/Jakarta time. Partitioned assets process the latest completed
 daily partition.
 
-The `transactions` asset loads `data/lake/transactions.csv` into a ClickHouse
-table named `transactions`. It replaces the table contents on each materialization.
-Configure the connection with `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`,
-`CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DATABASE`; these default
-to `localhost`, `8123`, `default`, an empty password, and `default`, respectively.
+
 
 ## Learn more
 
